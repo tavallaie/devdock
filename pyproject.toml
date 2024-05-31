@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "devdock"
+version = "0.0.0"
+description = "A Python library for managing development containers."
+authors = ["Ali Tavallaie <a.tavallaie@gmail.com>"]
+license = "mit"
+#readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+pyyaml = "^6.0.1"
+docker = "^7.1.0"
+click = "^8.1.7"
+
+[tool.poetry.scripts]
+devdock = "devdock.cli:cli"
+test = 'devdock:tests'
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
