@@ -12,6 +12,11 @@ pyyaml = "^6.0.1"
 docker = "^7.1.0"
 click = "^8.1.7"
 
+[tool.poetry.dev-dependencies]
+ruff = "^0.0.241"
+black = "^22.3.0"
+flake8 = "^4.0.1"
+
 [tool.poetry.scripts]
 devdock = "devdock.cli:cli"
 test = 'devdock:tests'
