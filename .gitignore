@@ -7,3 +7,4 @@ venv/
 ENV/
 env/
 dist/
+*.lock
