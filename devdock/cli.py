@@ -1,8 +1,8 @@
 import click
 from devdock.manager import DevContainerManager
-from devdock.shell import run_shell, run_command
+from devdock.shell import run_shell
 import docker
-import yaml
+import subprocess
 
 
 @click.group()
@@ -11,37 +11,36 @@ def cli():
 
 
 @cli.command()
-@click.option("--image", prompt="Docker image", help="The Docker image to use")
+@click.option("--image", help="The Docker image to use")
 @click.option("--name", prompt="Container name", help="The name of the container")
 @click.option(
     "--volumes", multiple=True, help="Volume mappings (host_path:container_path)"
 )
-def mkdevcontainer(image, name, volumes):
+@click.option(
+    "-f", "--compose-file", type=click.Path(), help="Path to the Docker Compose file"
+)
+@click.option(
+    "--volume-mappings",
+    multiple=True,
+    help="Volume mappings for services (service_name:host_path:container_path)",
+)
+def mkdevcontainer(image, name, volumes, compose_file, volume_mappings):
     manager = DevContainerManager()
     try:
-        container = manager.create_dev_container(name, image, volumes)
-        click.echo(f"Dev container {container.name} created with ID {container.id}.")
+        if compose_file:
+            manager.create_dev_compose(name, compose_file, volume_mappings)
+            click.echo(
+                f"Dev compose configuration {name} created and services started."
+            )
+        else:
+            volume_list = [v for v in volumes]
+            container = manager.create_dev_container(name, image, volume_list)
+            click.echo(
+                f"Dev container {container.name} created with ID {container.id}."
+            )
     except docker.errors.ImageNotFound as e:
         click.echo(f"Error: {str(e)}")
-    except Exception as e:
-        click.echo(f"Error: {str(e)}")
-
-
-@cli.command()
-@click.option(
-    "--compose-file",
-    prompt="Docker Compose file path",
-    help="The path to the Docker Compose file",
-)
-@click.option(
-    "--name", prompt="Configuration name", help="The name of the configuration"
-)
-def mkdevcompose(compose_file, name):
-    manager = DevContainerManager()
-    try:
-        manager.create_dev_compose(name, compose_file)
-        click.echo(f"Dev compose configuration {name} created and services started.")
-    except FileNotFoundError as e:
+    except ValueError as e:
         click.echo(f"Error: {str(e)}")
     except Exception as e:
         click.echo(f"Error: {str(e)}")
@@ -66,11 +65,17 @@ def rmdev(name):
 
 @cli.command()
 @click.argument("name")
-def workon(name):
+@click.option("--services", multiple=True, help="The specific services to activate")
+def workon(name, services):
     manager = DevContainerManager()
     try:
-        config = manager.activate_dev(name)
-        click.echo(f'Activated dev configuration {config["name"]}.')
+        config = manager.activate_dev(name, services)
+        if services:
+            click.echo(
+                f'Activated dev configuration {config["name"]} for services {", ".join(services)}.'
+            )
+        else:
+            click.echo(f'Activated dev configuration {config["name"]}.')
     except FileNotFoundError as e:
         click.echo(f"Error: {str(e)}")
     except Exception as e:
@@ -119,11 +124,12 @@ def remove(identifier):
 @cli.command()
 @click.argument("identifier")
 @click.argument("command")
-def run(identifier, command):
+@click.option("--service", help="The specific service to run the command in")
+def run(identifier, command, service):
     manager = DevContainerManager()
     try:
-        result = manager.run_command(identifier, command)
-        click.echo(result.output.decode())
+        output = manager.run_command(identifier, command, service)
+        click.echo(output)
     except docker.errors.NotFound as e:
         click.echo(f"Error: {str(e)}")
     except Exception as e:
@@ -132,117 +138,18 @@ def run(identifier, command):
 
 @cli.command()
 @click.argument("identifier")
-def shell(identifier):
-    try:
-        run_shell(identifier)
-    except Exception as e:
-        click.echo(f"Error: {str(e)}")
-
-
-@cli.command()
-@click.option("--name", prompt="Volume name", help="The name of the volume")
-def create_volume(name):
+@click.option("--service", help="The specific service to run the shell in")
+def shell(identifier, service):
     manager = DevContainerManager()
     try:
-        volume = manager.create_volume(name)
-        click.echo(f"Volume {volume.name} created.")
-    except Exception as e:
-        click.echo(f"Error: {str(e)}")
-
-
-@cli.command()
-@click.option("--name", prompt="Volume name", help="The name of the volume")
-def remove_volume(name):
-    manager = DevContainerManager()
-    try:
-        manager.remove_volume(name)
-        click.echo(f"Volume {name} removed.")
-    except docker.errors.NotFound as e:
-        click.echo(f"Error: {str(e)}")
-    except Exception as e:
-        click.echo(f"Error: {str(e)}")
-
-
-@cli.command()
-@click.option(
-    "--file_path",
-    prompt="Compose file path",
-    help="The path to the Docker Compose file",
-)
-def start_compose(file_path):
-    manager = DevContainerManager()
-    try:
-        manager.start_compose_services(file_path)
-        click.echo(f"Services in {file_path} started.")
-    except FileNotFoundError as e:
-        click.echo(f"Error: {str(e)}")
-    except RuntimeError as e:
-        click.echo(f"Error: {str(e)}")
-
-
-@cli.command()
-@click.option(
-    "--file_path",
-    prompt="Compose file path",
-    help="The path to the Docker Compose file",
-)
-def stop_compose(file_path):
-    manager = DevContainerManager()
-    try:
-        manager.stop_compose_services(file_path)
-        click.echo(f"Services in {file_path} stopped.")
-    except FileNotFoundError as e:
-        click.echo(f"Error: {str(e)}")
-    except RuntimeError as e:
-        click.echo(f"Error: {str(e)}")
-
-
-@cli.command()
-@click.option(
-    "--file_path",
-    prompt="Compose file path",
-    help="The path to the Docker Compose file",
-)
-@click.option(
-    "--volume_mappings",
-    prompt="Volume mappings (e.g., old_volume1=new_volume1,old_volume2=new_volume2)",
-    help="Volume mappings to update",
-)
-def update_volumes(file_path, volume_mappings):
-    manager = DevContainerManager()
-    try:
-        volume_mappings = dict(
-            mapping.split("=") for mapping in volume_mappings.split(",")
-        )
-        manager.update_volumes_in_compose(file_path, volume_mappings)
-        click.echo(f"Volumes in {file_path} updated.")
-    except FileNotFoundError as e:
-        click.echo(f"Error: {str(e)}")
-    except Exception as e:
-        click.echo(f"Error: {str(e)}")
-
-
-@cli.command()
-@click.option(
-    "-f",
-    "--config-file",
-    type=click.Path(exists=True),
-    help="Path to an external config file",
-)
-def load_config(config_file):
-    manager = DevContainerManager()
-    try:
-        config = manager.load_external_config(config_file)
-        name = config.get("name")
-        if config["type"] == "container":
-            manager.create_dev_container(name, config["image"], config.get("volumes"))
-        elif config["type"] == "compose":
-            manager.create_dev_compose(name, config["compose_file"])
-        click.echo(f"Loaded configuration from {config_file} and started {name}.")
-    except FileNotFoundError as e:
-        click.echo(f"Error: {str(e)}")
-    except yaml.YAMLError as e:
-        click.echo(f"Error: {str(e)}")
+        if service:
+            result = subprocess.run(
+                ["docker", "compose", "-f", identifier, "exec", service, "/bin/bash"],
+                check=True,
+            )
+            click.echo(result.stdout)
+        else:
+            run_shell(identifier)
     except Exception as e:
         click.echo(f"Error: {str(e)}")
 
